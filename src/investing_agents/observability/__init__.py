@@ -8,6 +8,7 @@ from investing_agents.observability.logging_config import (
     log_quality_metrics,
     setup_logging,
 )
+from investing_agents.observability.reasoning_trace import ReasoningStep, ReasoningTrace
 
 __all__ = [
     "setup_logging",
@@ -16,4 +17,6 @@ __all__ = [
     "log_agent_cost",
     "log_iteration_cost",
     "log_quality_metrics",
+    "ReasoningTrace",
+    "ReasoningStep",
 ]

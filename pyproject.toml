@@ -60,10 +60,13 @@ namespaces = false
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --strict-markers"
+addopts = "-ra -q --strict-markers -m 'not slow'"
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (real LLM calls, deselect with '-m \"not slow\"')",
+]
 
 [tool.ruff]
 line-length = 100
