@@ -4,7 +4,7 @@ Similar to Claude/GPT reasoning traces - shows user how the system thinks and pl
 """
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -35,7 +35,7 @@ class ReasoningStep:
             response: Response received (if applicable)
             metadata: Additional context
         """
-        self.timestamp = datetime.utcnow()
+        self.timestamp = datetime.now(UTC)
         self.step_type = step_type
         self.description = description
         self.agent_name = agent_name
@@ -113,7 +113,7 @@ class ReasoningTrace:
         self.ticker = ticker
         self.trace_dir = trace_dir
         self.steps: List[ReasoningStep] = []
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(UTC)
 
         logger.info(
             "reasoning_trace_started",
