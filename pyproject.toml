@@ -32,6 +32,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "httpx>=0.24.0",
     "aiofiles>=23.0.0",
+    "flask>=3.0.0",  # Web UI for progress monitoring
 ]
 
 [project.optional-dependencies]
