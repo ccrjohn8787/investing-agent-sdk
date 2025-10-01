@@ -51,6 +51,9 @@ Documentation = "https://github.com/chaorong/investing-agent-sdk/tree/main/docs"
 Repository = "https://github.com/chaorong/investing-agent-sdk"
 Issues = "https://github.com/chaorong/investing-agent-sdk/issues"
 
+[project.scripts]
+investing-agents = "investing_agents.cli:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
