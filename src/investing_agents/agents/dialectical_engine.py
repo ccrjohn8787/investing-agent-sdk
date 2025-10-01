@@ -299,6 +299,9 @@ IMPORTANT: Generate thorough, evidence-based bull and bear cases with >= 3 non-o
         Raises:
             ValueError: If JSON parsing fails or structure invalid
         """
+        # Strip code fence markers if present (```json ... ```)
+        response_text = response_text.replace("```json", "").replace("```", "")
+
         try:
             # Find JSON in response
             start = response_text.find("{")

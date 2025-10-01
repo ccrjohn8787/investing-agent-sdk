@@ -208,6 +208,8 @@ EXAMPLES OF GOOD EVIDENCE:
 }}
 
 OUTPUT FORMAT (JSON only, no other text):
+IMPORTANT: Output VALID JSON only. Do NOT use malformed quotes like "text" and "text" - combine into single string instead.
+
 {{
   "evidence_items": [
     {{
@@ -215,7 +217,7 @@ OUTPUT FORMAT (JSON only, no other text):
       "claim": "...",
       "source_type": "...",
       "source_reference": "...",
-      "quote": "...",
+      "quote": "Single quoted string - combine multiple quotes with 'and' inside the string",
       "confidence": 0.95,
       "impact_direction": "+",
       "contradicts": []
@@ -249,12 +251,22 @@ IMPORTANT: Extract as much evidence as possible. Aim for 5-10 items per source f
         Raises:
             ValueError: If JSON parsing fails
         """
+        # Strip code fence markers if present (```json ... ```)
+        response_text = response_text.replace("```json", "").replace("```", "")
+
         # Find JSON in response
         try:
             start = response_text.find('{')
             end = response_text.rfind('}') + 1
             if start >= 0 and end > start:
                 json_str = response_text[start:end]
+
+                # Try to fix common JSON issues
+                # Fix malformed quotes like: "text" and "more" -> "text and more"
+                import re
+                # Pattern: "text" and "text" inside a value
+                json_str = re.sub(r'"\s+and\s+"', ' and ', json_str)
+
                 result = json.loads(json_str)
 
                 # Validate structure
@@ -284,15 +296,16 @@ IMPORTANT: Extract as much evidence as possible. Aim for 5-10 items per source f
                     if not 0.0 <= item["confidence"] <= 1.0:
                         raise ValueError(f"Invalid confidence: {item['confidence']}")
 
-                    # Validate impact direction
-                    if item["impact_direction"] not in {"+", "-"}:
-                        raise ValueError(f"Invalid impact_direction: {item['impact_direction']}")
+                    # Validate impact direction (accept +, -, or neutral for flexibility)
+                    if item["impact_direction"] not in {"+", "-", "neutral", "0"}:
+                        # Warn but don't fail for unexpected values
+                        print(f"Warning: Unexpected impact_direction: {item['impact_direction']}")
 
                 return result
             else:
-                raise ValueError(f"No JSON found in response: {response_text[:200]}...")
+                raise ValueError(f"No JSON found in response: {response_text[:1000]}...")
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse JSON: {e}\nResponse: {response_text[:200]}...")
+            raise ValueError(f"Failed to parse JSON: {e}\nResponse: {response_text[:1000]}...")
 
     async def cross_reference_evidence(
         self,

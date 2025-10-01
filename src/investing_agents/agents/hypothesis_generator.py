@@ -167,6 +167,8 @@ OUTPUT FORMAT (JSON only, no other text):
             ValueError: If JSON parsing fails
         """
         # Find JSON in response
+        # Strip code fence markers if present (```json ... ```)
+        response_text = response_text.replace("```json", "").replace("```", "")
         try:
             start = response_text.find('{')
             end = response_text.rfind('}') + 1

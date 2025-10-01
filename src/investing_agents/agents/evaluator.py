@@ -332,6 +332,8 @@ RETURN FORMAT (JSON only):
             Parsed JSON result
         """
         # Parse JSON from response text
+        # Strip code fence markers if present (```json ... ```)
+        response_text = response_text.replace("```json", "").replace("```", "")
         try:
             # Try to find JSON in response
             start = response_text.find('{')
