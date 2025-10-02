@@ -33,6 +33,10 @@ dependencies = [
     "httpx>=0.24.0",
     "aiofiles>=23.0.0",
     "flask>=3.0.0",  # Web UI for progress monitoring
+    "rich>=13.0.0",  # Rich console UI for progress monitoring
+    "beautifulsoup4>=4.12.0",  # SEC filing HTML parsing
+    "lxml>=4.9.0",  # Fast XML/HTML parser for BeautifulSoup
+    "yfinance>=0.2.40",  # Real-time stock price fetching
 ]
 
 [project.optional-dependencies]

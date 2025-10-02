@@ -64,3 +64,4 @@ data/memory/*
 .DS_Store
 Thumbs.db
 logs/
+output/

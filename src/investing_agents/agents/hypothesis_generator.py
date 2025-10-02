@@ -129,9 +129,9 @@ REQUIREMENTS:
    - Impact level (HIGH/MEDIUM/LOW on valuation)
 
 EXAMPLES OF GOOD HYPOTHESES:
-- "Cloud revenue growth is accelerating to 40% YoY by Q4 2024"
-- "Operating leverage will expand margins by 300bps in next 12 months"
-- "New product category will contribute $500M+ incremental revenue"
+- "Cloud revenue growth will accelerate to 40% YoY, reaching $X billion by 2026"
+- "Operating leverage will expand margins by 300bps over the next 2-3 years"
+- "New product category will contribute $500M+ incremental revenue by Year 3"
 
 EXAMPLES OF BAD HYPOTHESES:
 - "Company is doing well" (not specific, not falsifiable)

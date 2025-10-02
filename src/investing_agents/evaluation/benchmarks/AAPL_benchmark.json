@@ -1,0 +1,40 @@
+{
+  "ticker": "AAPL",
+  "report": {
+    "ticker": "AAPL",
+    "company": "Apple Inc.",
+    "executive_summary": {
+      "thesis": "Apple maintains strong competitive position in consumer hardware with growing services revenue. Valuation remains elevated but justified by consistent execution and robust ecosystem."
+    },
+    "recommendation": {
+      "action": "Buy",
+      "conviction": "Moderate",
+      "target_price": 180.0
+    },
+    "key_findings": [
+      "Services revenue growing at 15% CAGR, now 20% of total revenue",
+      "iPhone remains dominant with 52% market share in premium segment",
+      "Operating margins expanding to 30%+ due to services mix shift",
+      "$90B+ annual buyback program supports EPS growth",
+      "Vision Pro represents new growth vector in spatial computing"
+    ],
+    "risks": [
+      "China exposure (20% of revenue) vulnerable to geopolitical tensions",
+      "Regulatory scrutiny on App Store fees and ecosystem lock-in",
+      "Hardware upgrade cycles lengthening as innovation slows"
+    ],
+    "bull_case": "Services revenue accelerates, margins expand, buybacks drive EPS",
+    "bear_case": "China weakness, regulatory pressure, slowing hardware cycles",
+    "sources_used": [
+      "10-K",
+      "10-Q",
+      "Earnings calls",
+      "Industry reports"
+    ]
+  },
+  "metadata": {
+    "source": "Sample benchmark for testing",
+    "quality_level": "institutional"
+  },
+  "added_date": "2025-10-01"
+}

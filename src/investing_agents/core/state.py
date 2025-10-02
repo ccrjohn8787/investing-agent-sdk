@@ -23,6 +23,7 @@ class IterationState:
     # Research results
     evidence_gathered: List[Dict[str, Any]] = field(default_factory=list)
     sources_used: List[str] = field(default_factory=list)
+    research_results: List[Dict[str, Any]] = field(default_factory=list)  # For hypothesis refinement
 
     # Synthesis results (if checkpoint iteration)
     synthesis_insights: Optional[Dict[str, Any]] = None
@@ -67,6 +68,7 @@ class AnalysisState:
     ticker: str
     started_at: datetime
     completed_at: Optional[datetime] = None
+    status: str = "in_progress"  # in_progress, completed, failed, interrupted
 
     # Hypotheses
     hypotheses: List[Dict[str, Any]] = field(default_factory=list)
@@ -81,6 +83,10 @@ class AnalysisState:
     # Final outputs
     final_report: Optional[Dict[str, Any]] = None
     final_evaluation: Optional[Dict[str, Any]] = None
+
+    # Error tracking (for failed/interrupted analyses)
+    error_message: Optional[str] = None
+    last_successful_iteration: Optional[int] = None
 
     # Cumulative costs
     total_cost_usd: float = 0.0

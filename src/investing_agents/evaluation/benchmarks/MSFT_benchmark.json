@@ -1,0 +1,40 @@
+{
+  "ticker": "MSFT",
+  "report": {
+    "ticker": "MSFT",
+    "company": "Microsoft Corporation",
+    "executive_summary": {
+      "thesis": "Microsoft is the clear leader in enterprise cloud and AI, with Azure growing 30%+ and Copilot driving new revenue streams. Strong competitive moat and recurring revenue model justify premium valuation."
+    },
+    "recommendation": {
+      "action": "Strong Buy",
+      "conviction": "High",
+      "target_price": 450.0
+    },
+    "key_findings": [
+      "Azure revenue growing 30%+ YoY, gaining share vs AWS",
+      "Office 365 Copilot early traction with enterprise customers",
+      "Gaming division stabilizing post-Activision acquisition",
+      "Operating margins above 40% with strong free cash flow",
+      "LinkedIn and Dynamics remain underappreciated growth drivers"
+    ],
+    "risks": [
+      "Elevated valuation leaves little room for execution missteps",
+      "Dependency on enterprise IT spending cyclicality",
+      "Open-source AI models could commoditize AI features"
+    ],
+    "bull_case": "AI monetization exceeds expectations, Azure share gains accelerate",
+    "bear_case": "Enterprise spending slowdown, AI commoditization pressure",
+    "sources_used": [
+      "10-K",
+      "10-Q",
+      "Azure growth reports",
+      "Industry surveys"
+    ]
+  },
+  "metadata": {
+    "source": "Sample benchmark for testing",
+    "quality_level": "institutional"
+  },
+  "added_date": "2025-10-01"
+}
