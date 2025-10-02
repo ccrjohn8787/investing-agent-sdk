@@ -9,12 +9,17 @@ Quality-First Approach:
 - Full reasoning trace integration
 """
 
+import asyncio
 import json
+import time
 from typing import Any, Dict, List, Optional
 
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, TextBlock, query
+from structlog import get_logger
 
 from investing_agents.observability import ReasoningTrace
+
+logger = get_logger(__name__)
 
 
 class NarrativeBuilderAgent:
@@ -94,13 +99,68 @@ Always return valid JSON with structured report."""
             max_turns=1,  # Single comprehensive report
         )
 
-        # Collect response
+        # Collect response with progress logging and timeout
         full_response = ""
-        async for message in query(prompt=prompt, options=options):
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        full_response += block.text
+        tokens_received = 0
+        last_log_time = time.time()
+        start_time = time.time()
+        timeout_seconds = 900  # 15 minute timeout
+
+        logger.info(
+            "narrative.generation.start",
+            estimated_duration="10-15 minutes",
+            timeout_minutes=timeout_seconds / 60,
+        )
+
+        try:
+            async for message in query(prompt=prompt, options=options):
+                # Check timeout
+                elapsed = time.time() - start_time
+                if elapsed > timeout_seconds:
+                    raise TimeoutError(
+                        f"Narrative generation exceeded {timeout_seconds}s timeout"
+                    )
+
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            full_response += block.text
+                            tokens_received += len(block.text.split())
+
+                            # Log progress every 10 seconds
+                            if time.time() - last_log_time > 10:
+                                elapsed_min = (time.time() - start_time) / 60
+                                logger.info(
+                                    "narrative.progress",
+                                    tokens_received=tokens_received,
+                                    estimated_tokens=f"{tokens_received / 1000:.1f}k",
+                                    elapsed_minutes=f"{elapsed_min:.1f}",
+                                    timeout_remaining_min=f"{(timeout_seconds - elapsed) / 60:.1f}",
+                                )
+                                last_log_time = time.time()
+
+            logger.info(
+                "narrative.generation.complete",
+                total_tokens=tokens_received,
+                duration_seconds=time.time() - start_time,
+            )
+
+        except TimeoutError as e:
+            logger.error(
+                "narrative.timeout",
+                error=str(e),
+                tokens_received=tokens_received,
+                elapsed_seconds=time.time() - start_time,
+            )
+            raise
+        except Exception as e:
+            logger.error(
+                "narrative.generation.error",
+                error=str(e),
+                tokens_received=tokens_received,
+                elapsed_seconds=time.time() - start_time,
+            )
+            raise
 
         # Log to trace
         if trace:
@@ -121,6 +181,12 @@ Always return valid JSON with structured report."""
             "synthesis_count": len(synthesis_history),
             "has_valuation": valuation_summary is not None,
         }
+
+        # CRITICAL FIX: Include actual valuation data in report
+        # The LLM generates narrative text about valuation, but we need the numerical data
+        # (current_price, upside_downside_pct, etc.) to be persisted to final_report.json
+        if valuation_summary:
+            result["valuation"] = valuation_summary
 
         return result
 
@@ -173,61 +239,68 @@ EVIDENCE SUMMARY ({len(evidence_bundle.get('evidence_items', []))} evidence item
 {evidence_text}
 {valuation_text}
 
-TASK: Generate comprehensive institutional-grade investment report.
+TASK: Generate institutional-grade investment report optimized for PM decision-making.
 
-TARGET LENGTH: 15-20 pages (comprehensive, quality-first)
+TARGET LENGTH: 8-10 pages (concise, high-signal)
+AUDIENCE: Portfolio managers who need to make BUY/HOLD/SELL decisions in 10 minutes
+STYLE: Dense, data-driven, direct - minimize prose, maximize insight-per-word
 
 REQUIRED SECTIONS:
 
-1. EXECUTIVE SUMMARY (3-5 paragraphs)
-   - Investment thesis (2-3 sentences)
-   - Key catalysts (3-5 bullet points)
-   - Key risks (3-5 bullet points)
+1. EXECUTIVE SUMMARY (1-2 paragraphs max)
+   - Investment thesis (2-3 sentences only, no more)
+   - Key catalysts (top 3 bullet points)
+   - Key risks (top 3 bullet points)
    - Valuation summary (price target if available)
    - Recommendation (BUY/HOLD/SELL) with timeframe
 
-2. INVESTMENT THESIS (2-3 pages, comprehensive)
+2. INVESTMENT THESIS (1-2 paragraphs)
    - Core hypothesis with supporting evidence [ref: ev_xxx]
-   - Why now? (timing and catalysts)
-   - Competitive positioning and moat
-   - Unit economics and margin structure
-   - Growth drivers and sustainability
+   - Why now? (timing and catalysts - 2-3 sentences)
+   - Competitive moat (1 paragraph maximum)
+   - Growth drivers (bullet points, not prose)
 
-3. FINANCIAL ANALYSIS (2-3 pages, detailed)
-   - Revenue drivers by segment
-   - Margin dynamics (gross, operating, net)
-   - Cash flow generation and quality
-   - Capital allocation strategy
-   - Balance sheet strength
+3. FINANCIAL ANALYSIS (use tables when possible, prose as secondary)
+   - Revenue drivers (2-3 key points, evidence-backed)
+   - Margin dynamics (trend + 2-3 key drivers)
+   - Cash flow (FCF quality + capital allocation in 1 paragraph)
+   - Balance sheet (leverage + liquidity in 2-3 sentences)
 
-4. VALUATION (2-3 pages, thorough)
-   - DCF methodology and assumptions
-   - Scenario analysis (bull/base/bear)
-   - Sensitivity to key assumptions (WACC, growth)
-   - Peer comparisons (if applicable)
-   - Price target with 12-month horizon
+4. VALUATION (include DCF table, scenario table)
+   - DCF assumptions (bullet format)
+   - Scenario analysis (bull/base/bear with probabilities)
+   - Key sensitivities (top 2-3 only)
 
-5. BULL CASE & BEAR CASE (3-4 pages, balanced)
-   - Bull case: 3-5 strongest arguments with evidence
-   - Bear case: 3-5 strongest counterarguments with evidence
-   - Probability assessment for each scenario
-   - Key debate points and tension resolution
-   - Non-obvious insights from dialectical analysis
+5. BULL CASE & BEAR CASE (combined 1-2 pages)
+   - Bull case: Top 3 strongest arguments with evidence
+   - Bear case: Top 3 strongest counterarguments with evidence
+   - Probability-weighted view (1 paragraph synthesis)
 
-6. RISKS & MITIGANTS (2-3 pages, comprehensive)
-   - Operational risks and mitigants
-   - Market risks and hedging strategies
+6. RISKS & MITIGANTS (focus on TOP 5 material risks)
+   - Thesis-specific risks (top 2-3)
+   - Operational/market risks (top 2-3)
+   - Each risk: 1 sentence description + 1 sentence mitigation
    - Competitive risks and defensibility
    - Regulatory/macro risks
    - Idiosyncratic risks specific to thesis
 
-7. RECOMMENDATION (1-2 pages, actionable)
-   - Action: BUY/HOLD/SELL with conviction level
-   - Timeframe: 6-12 month investment horizon
-   - Entry conditions (when to buy)
-   - Exit conditions (when to sell)
-   - Position sizing guidance
-   - Monitoring metrics (KPIs to track)
+7. RECOMMENDATION (1 page max)
+   - Clear action (BUY/HOLD/SELL)
+   - Conviction level (HIGH/MEDIUM/LOW) with 1-sentence rationale
+   - Position sizing (recommended % of portfolio)
+   - Entry conditions (top 3 only)
+   - Exit conditions (top 3 only)
+   - Key monitoring metrics (top 3 only)
+
+FORMATTING RULES:
+- CONCISE over COMPREHENSIVE - every sentence must add insight
+- Use bullet points, not paragraphs, whenever possible
+- Reference evidence with [ev_xxx] notation
+- Include specific numbers and dates
+- Each section should fit on 1-2 screens max
+- Avoid generic/obvious statements
+- Front-load conclusions, then support with evidence
+- PM should be able to scan entire report in 5 minutes
 
 QUALITY STANDARDS:
 1. Professional institutional-grade tone
@@ -305,7 +378,7 @@ OUTPUT FORMAT (JSON only, no other text):
   "recommendation": {{
     "action": "BUY|HOLD|SELL",
     "conviction": "HIGH|MEDIUM|LOW",
-    "timeframe": "6-12 months",
+    "timeframe": "2-3 years",
     "entry_conditions": ["When to buy", "..."],
     "exit_conditions": ["When to sell", "..."],
     "position_sizing": "Suggested allocation guidance",
@@ -345,6 +418,8 @@ IMPORTANT: Generate comprehensive, evidence-based report with >= 80% evidence co
     ) -> str:
         """Format evidence summary for prompt.
 
+        Optimized: Shows top 50 evidence items by confidence to reduce prompt size.
+
         Args:
             evidence_items: List of evidence dicts
 
@@ -354,9 +429,25 @@ IMPORTANT: Generate comprehensive, evidence-based report with >= 80% evidence co
         if not evidence_items:
             return "(No evidence collected)"
 
+        # Sort by confidence and take top 50 to reduce prompt size
+        sorted_evidence = sorted(
+            evidence_items,
+            key=lambda x: x.get("confidence", 0.0),
+            reverse=True,
+        )[:50]
+
+        logger.info(
+            "narrative.evidence_filtered",
+            total_evidence=len(evidence_items),
+            filtered_to=len(sorted_evidence),
+            min_confidence=min(
+                (e.get("confidence", 0.0) for e in sorted_evidence), default=0.0
+            ),
+        )
+
         # Group by source type
         by_source = {}
-        for item in evidence_items:
+        for item in sorted_evidence:
             source_type = item.get("source_type", "Unknown")
             if source_type not in by_source:
                 by_source[source_type] = []
@@ -366,12 +457,17 @@ IMPORTANT: Generate comprehensive, evidence-based report with >= 80% evidence co
         formatted = []
         for source_type, items in sorted(by_source.items()):
             formatted.append(f"\n{source_type} ({len(items)} items):")
-            for item in items[:5]:  # Show top 5 per source type
+            for item in items[:10]:  # Show top 10 per source type
                 formatted.append(
-                    f"  [{item['id']}] {item['claim']} (confidence: {item.get('confidence', 0.0)})"
+                    f"  [{item['id']}] {item['claim'][:150]}... (confidence: {item.get('confidence', 0.0):.2f})"
                 )
-            if len(items) > 5:
-                formatted.append(f"  ... and {len(items) - 5} more")
+            if len(items) > 10:
+                formatted.append(f"  ... and {len(items) - 10} more {source_type} items")
+
+        if len(evidence_items) > 50:
+            formatted.append(
+                f"\n(Showing top 50 of {len(evidence_items)} total evidence items by confidence)"
+            )
 
         return "\n".join(formatted)
 

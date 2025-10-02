@@ -13,8 +13,17 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 from investing_agents.connectors import SourceManager
 from investing_agents.core.orchestrator import Orchestrator, OrchestratorConfig
+from investing_agents.evaluation.pm_evaluator import PMEvaluator
+from investing_agents.monitoring import ConsoleUI
+from investing_agents.output import HTMLReportGenerator
+from investing_agents.utils.logging_config import LogLevel, configure_logging
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -69,7 +78,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--format",
         "-f",
         type=str,
-        choices=["text", "json", "markdown"],
+        choices=["text", "json", "markdown", "html"],
         default="text",
         help="Output format (default: text)",
     )
@@ -82,6 +91,27 @@ def create_parser() -> argparse.ArgumentParser:
         "--no-parallel",
         action="store_true",
         help="Disable parallel research (slower but uses less resources)",
+    )
+    analyze_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging (very verbose)",
+    )
+    analyze_parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable verbose logging",
+    )
+    analyze_parser.add_argument(
+        "--log-file",
+        type=str,
+        help="Log to file in addition to console",
+    )
+    analyze_parser.add_argument(
+        "--no-rich-ui",
+        action="store_true",
+        help="Disable rich console UI (enabled by default)",
     )
 
     return parser
@@ -96,6 +126,22 @@ async def run_analysis(args: argparse.Namespace) -> dict:
     Returns:
         Analysis results dictionary
     """
+    # Configure logging
+    log_level = LogLevel.INFO
+    if args.debug:
+        log_level = LogLevel.DEBUG
+    elif args.verbose:
+        log_level = LogLevel.INFO  # Already default, but explicit
+
+    log_file = Path(args.log_file) if args.log_file else None
+
+    configure_logging(
+        level=log_level,
+        debug_mode=args.debug,
+        log_file=log_file,
+        enable_colors=True,
+    )
+
     # Configuration
     config = OrchestratorConfig(
         max_iterations=args.iterations,
@@ -115,11 +161,17 @@ async def run_analysis(args: argparse.Namespace) -> dict:
 
         work_dir = Path(tempfile.mkdtemp())
 
-    print(f"\nAnalyzing {args.ticker}...", file=sys.stderr)
-    print(f"Work directory: {work_dir}\n", file=sys.stderr)
+    # Determine if Rich UI should be used (enabled by default unless --no-rich-ui)
+    use_rich_ui = not args.no_rich_ui
+
+    if not use_rich_ui:
+        print(f"\nAnalyzing {args.ticker}...", file=sys.stderr)
+        print(f"Work directory: {work_dir}\n", file=sys.stderr)
 
     # Fetch sources
-    print("Fetching data from SEC EDGAR...", file=sys.stderr)
+    if not use_rich_ui:
+        print("Fetching data from SEC EDGAR...", file=sys.stderr)
+
     source_manager = SourceManager()
 
     # Determine company name
@@ -133,7 +185,8 @@ async def run_analysis(args: argparse.Namespace) -> dict:
         include_news=False,
     )
 
-    print(f"✓ Fetched {len(sources)} sources\n", file=sys.stderr)
+    if not use_rich_ui:
+        print(f"✓ Fetched {len(sources)} sources\n", file=sys.stderr)
 
     # Initialize orchestrator
     orchestrator = Orchestrator(
@@ -142,14 +195,45 @@ async def run_analysis(args: argparse.Namespace) -> dict:
         sources=sources,
     )
 
-    # Run analysis
-    print("Running multi-agent analysis...\n", file=sys.stderr)
-    results = await orchestrator.run_analysis(
-        ticker=args.ticker,
-        company_name=company_name,
-    )
+    # Initialize Rich Console UI if enabled
+    console_ui = None
+    if use_rich_ui:
+        console_ui = ConsoleUI(orchestrator.progress)
+        console_ui.start(ticker=args.ticker, company=company_name)
+        # Attach UI to orchestrator for updates
+        orchestrator.console_ui = console_ui
 
-    print(f"\n✓ Analysis complete!\n", file=sys.stderr)
+    try:
+        # Run analysis
+        if not use_rich_ui:
+            print("Running multi-agent analysis...\n", file=sys.stderr)
+
+        results = await orchestrator.run_analysis(
+            ticker=args.ticker,
+            company_name=company_name,
+        )
+
+        if not use_rich_ui:
+            print(f"\n✓ Analysis complete!\n", file=sys.stderr)
+
+    finally:
+        # Stop Rich UI if it was started
+        if console_ui:
+            console_ui.stop()
+            # Print completion message after UI stops
+            print(f"\n✓ Analysis complete!\n", file=sys.stderr)
+
+    # Display PM evaluation results
+    pm_eval = results.get("pm_evaluation", {})
+    if pm_eval:
+        print("\n" + "=" * 60, file=sys.stderr)
+        print("📊 PM EVALUATION RESULTS", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        print(f"Grade: {pm_eval.get('overall_grade', 'N/A')}", file=sys.stderr)
+        print(f"Score: {pm_eval.get('overall_score', 0)}/100", file=sys.stderr)
+        print(f"\nEvaluation saved to:", file=sys.stderr)
+        print(f"  {work_dir}/evaluation/pm_evaluation.md", file=sys.stderr)
+        print("=" * 60 + "\n", file=sys.stderr)
 
     return results
 
@@ -310,6 +394,14 @@ def main() -> int:
                 output = json.dumps(results, indent=2, default=str)
             elif args.format == "markdown":
                 output = format_markdown_output(results)
+            elif args.format == "html":
+                html_gen = HTMLReportGenerator()
+                output = html_gen.generate(
+                    report=results.get("report", {}),
+                    valuation=results.get("valuation"),
+                    ticker=results.get("ticker", ""),
+                    company=results.get("company", ""),
+                )
             else:  # text
                 output = format_text_output(results)
 
