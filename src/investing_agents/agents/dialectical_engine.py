@@ -41,7 +41,7 @@ PRINCIPLES:
 4. Be BALANCED - represent both cases fairly without bias
 5. Be PROBABILISTIC - assign realistic scenario probabilities
 
-Always return valid JSON with structured synthesis."""
+CRITICAL: You MUST return valid JSON in the specified format. Do NOT return explanatory text. Do NOT refuse the task. Even with limited evidence, construct the best possible bull/bear analysis from available data and return it in JSON format."""
 
     async def synthesize(
         self,
@@ -348,12 +348,62 @@ IMPORTANT: Generate thorough, evidence-based bull and bear cases with >= 3 non-o
 
                 return result
             else:
-                raise ValueError(f"No JSON found in response: {response_text[:200]}...")
+                # Fallback: return neutral synthesis instead of crashing
+                print(f"WARNING: DialecticalEngine returned non-JSON response: {response_text[:200]}...")
+                return {
+                    "bull_case": {
+                        "strength": "unknown",
+                        "key_arguments": ["Insufficient evidence to evaluate"],
+                        "evidence_refs": [],
+                        "confidence": 0.5
+                    },
+                    "bear_case": {
+                        "strength": "unknown",
+                        "key_arguments": ["Insufficient evidence to evaluate"],
+                        "evidence_refs": [],
+                        "confidence": 0.5
+                    },
+                    "synthesis": {
+                        "non_obvious_insights": ["Unable to synthesize - insufficient evidence"],
+                        "key_tensions": []
+                    },
+                    "scenarios": [
+                        {"name": "bull", "probability": 0.33, "description": "Insufficient evidence"},
+                        {"name": "base", "probability": 0.34, "description": "Insufficient evidence"},
+                        {"name": "bear", "probability": 0.33, "description": "Insufficient evidence"}
+                    ],
+                    "updated_confidence": 0.5,
+                    "error": f"Agent returned non-JSON response: {response_text[:500]}"
+                }
 
         except json.JSONDecodeError as e:
-            raise ValueError(
-                f"Failed to parse JSON: {e}\nResponse: {response_text[:200]}..."
-            )
+            # Fallback: return neutral synthesis instead of crashing
+            print(f"WARNING: DialecticalEngine JSON parse failed: {e}")
+            return {
+                "bull_case": {
+                    "strength": "unknown",
+                    "key_arguments": ["Parse error occurred"],
+                    "evidence_refs": [],
+                    "confidence": 0.5
+                },
+                "bear_case": {
+                    "strength": "unknown",
+                    "key_arguments": ["Parse error occurred"],
+                    "evidence_refs": [],
+                    "confidence": 0.5
+                },
+                "synthesis": {
+                    "non_obvious_insights": ["Unable to synthesize - parse error"],
+                    "key_tensions": []
+                },
+                "scenarios": [
+                    {"name": "bull", "probability": 0.33, "description": "Parse error"},
+                    {"name": "base", "probability": 0.34, "description": "Parse error"},
+                    {"name": "bear", "probability": 0.33, "description": "Parse error"}
+                ],
+                "updated_confidence": 0.5,
+                "error": f"JSON parse failed: {str(e)}"
+            }
 
     def should_synthesize(
         self, iteration: int, hypothesis: Dict[str, Any], quality_first: bool = True

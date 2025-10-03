@@ -1,54 +1,67 @@
 #!/bin/bash
-# Real-time analysis monitoring script
+# Monitor running investment analysis processes
 
-LOG_FILE="$1"
-INTERVAL=5  # Check every 5 seconds
+echo "===== INVESTING-AGENTS MONITOR ====="
+echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+echo
 
-if [ -z "$LOG_FILE" ]; then
-    echo "Usage: $0 <log_file>"
-    exit 1
+# Find all running investing-agents processes
+PROCESSES=$(ps aux | grep "[i]nvesting-agents" | grep -v grep)
+
+if [ -z "$PROCESSES" ]; then
+    echo "No active investing-agents processes found"
+else
+    echo "Active Processes:"
+    echo "$PROCESSES" | awk '{printf "  PID: %-6s CPU: %-5s MEM: %-5s CMD: %s\n", $2, $3"%", $4"%", substr($0, index($0,$11))}'
+    echo
 fi
 
-echo "=== NVIDIA Analysis Monitor ==="
-echo "Watching: $LOG_FILE"
-echo "Checking every ${INTERVAL}s for progress..."
-echo ""
+# Check improvement loop processes
+LOOP_PROCESSES=$(ps aux | grep "[i]mprovement_loop.py" | grep -v grep)
 
-last_line=0
+if [ ! -z "$LOOP_PROCESSES" ]; then
+    echo "Active Improvement Loops:"
+    echo "$LOOP_PROCESSES" | awk '{printf "  PID: %-6s CPU: %-5s MEM: %-5s CMD: %s\n", $2, $3"%", $4"%", substr($0, index($0,$11))}'
+    echo
+fi
 
-while true; do
-    if [ ! -f "$LOG_FILE" ]; then
-        echo "[$(date +%H:%M:%S)] Waiting for log file..."
-        sleep $INTERVAL
-        continue
+# Check recent log files
+echo "Recent Log Files:"
+find . -type f \( -name "*.log" -o -name "*.jsonl" \) -not -path "./.venv/*" -not -path "./.git/*" -mmin -60 2>/dev/null | \
+    xargs ls -lht 2>/dev/null | head -5 | \
+    awk '{printf "  %s %s %6s %s\n", $6, $7, $5, $9}'
+
+if [ -z "$(find . -type f \( -name "*.log" -o -name "*.jsonl" \) -not -path "./.venv/*" -not -path "./.git/*" -mmin -60 2>/dev/null)" ]; then
+    echo "  (No log files modified in last 60 minutes)"
+fi
+
+echo
+
+# Check output files
+echo "Recent Output Files:"
+find output -type f -name "*.html" -mmin -60 2>/dev/null | \
+    xargs ls -lht 2>/dev/null | head -5 | \
+    awk '{printf "  %s %s %6s %s\n", $6, $7, $5, $9}'
+
+if [ -z "$(find output -type f -name "*.html" -mmin -60 2>/dev/null)" ]; then
+    echo "  (No HTML outputs in last 60 minutes)"
+fi
+
+echo
+
+# Check state directories
+echo "Analysis State Directories:"
+if [ -d "data/memory" ]; then
+    find data/memory -maxdepth 1 -type d -mmin -60 2>/dev/null | tail -n +2 | \
+        xargs ls -ldht 2>/dev/null | \
+        awk '{printf "  %s %s %s\n", $6, $7, $9}'
+
+    if [ -z "$(find data/memory -maxdepth 1 -type d -mmin -60 2>/dev/null | tail -n +2)" ]; then
+        echo "  (No active analysis states in last 60 minutes)"
     fi
+else
+    echo "  (No data/memory directory found)"
+fi
 
-    # Get new lines since last check
-    current_lines=$(wc -l < "$LOG_FILE")
-    if [ $current_lines -gt $last_line ]; then
-        # Show key events
-        tail -n +$((last_line + 1)) "$LOG_FILE" | grep -E "phase\.|hypotheses\.|valuation\.|analysis\.complete|ERROR|error|Analysis complete|Report saved|AGENT_CALL|Extracted|Translated|fair_value" | while read line; do
-            timestamp=$(date +%H:%M:%S)
-            echo "[$timestamp] $line"
-        done
-        last_line=$current_lines
-    fi
-
-    # Check if analysis completed or failed
-    if grep -q "Analysis complete" "$LOG_FILE" 2>/dev/null || \
-       grep -q "Report saved to:" "$LOG_FILE" 2>/dev/null; then
-        echo ""
-        echo "=== ANALYSIS COMPLETED ==="
-        break
-    fi
-
-    if grep -q "ERROR" "$LOG_FILE" 2>/dev/null && \
-       ! grep -q "analysis.complete" "$LOG_FILE" 2>/dev/null; then
-        echo ""
-        echo "=== ERROR DETECTED ==="
-        tail -20 "$LOG_FILE" | grep -A 5 "ERROR"
-        break
-    fi
-
-    sleep $INTERVAL
-done
+echo
+echo "====================================="

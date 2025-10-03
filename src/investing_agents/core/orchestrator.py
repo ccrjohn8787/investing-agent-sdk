@@ -562,7 +562,9 @@ class Orchestrator:
 
             # Collect evidence from previous iterations
             for prev_iter in self.state.iterations:
-                all_evidence_items.extend(prev_iter.evidence_gathered)
+                # Extract evidence from research_results (not evidence_gathered which is always empty)
+                for result in prev_iter.research_results:
+                    all_evidence_items.extend(result.get("evidence_items", []))
 
             while iteration <= self.config.max_iterations:
                 self.log.info("iteration.start", iteration=iteration)
@@ -1423,6 +1425,100 @@ Note: Free tier has 1 req/sec limit - wait between searches."""
 
         return valuation_summary
 
+    def _summarize_evidence(
+        self,
+        all_evidence: List[Dict[str, Any]],
+        validated_hypotheses: List[Dict[str, Any]],
+        max_total_evidence: int = 100,
+        max_per_hypothesis: int = 15,
+    ) -> List[Dict[str, Any]]:
+        """Summarize and compress evidence to avoid context overflow.
+
+        Strategy:
+        1. Group evidence by hypothesis
+        2. Keep top N highest-confidence evidence per hypothesis
+        3. Limit total evidence to max_total_evidence
+        4. Preserve evidence diversity (mix of supporting/contradicting)
+
+        Args:
+            all_evidence: All evidence items collected
+            validated_hypotheses: Hypotheses to preserve evidence for
+            max_total_evidence: Maximum total evidence items to keep
+            max_per_hypothesis: Maximum evidence items per hypothesis
+
+        Returns:
+            Summarized evidence list
+        """
+        if len(all_evidence) <= max_total_evidence:
+            return all_evidence  # No need to summarize
+
+        self.log.info(
+            "evidence.summarizing",
+            total_evidence=len(all_evidence),
+            max_total=max_total_evidence,
+            max_per_hypothesis=max_per_hypothesis,
+        )
+
+        # Group evidence by hypothesis_id (if available in evidence)
+        evidence_by_hypothesis: Dict[str, List[Dict[str, Any]]] = {}
+        uncategorized_evidence = []
+
+        for ev in all_evidence:
+            # Try to determine which hypothesis this evidence relates to
+            # Evidence may have hypothesis_id in metadata or we infer from ID pattern
+            hypothesis_id = ev.get("hypothesis_id")
+            if not hypothesis_id:
+                # Try to infer from evidence ID pattern (ev_h1_001 -> h1)
+                ev_id = ev.get("id", "")
+                if "_h" in ev_id:
+                    try:
+                        hypothesis_id = ev_id.split("_")[1]  # Extract h1, h2, etc.
+                    except IndexError:
+                        pass
+
+            if hypothesis_id:
+                if hypothesis_id not in evidence_by_hypothesis:
+                    evidence_by_hypothesis[hypothesis_id] = []
+                evidence_by_hypothesis[hypothesis_id].append(ev)
+            else:
+                uncategorized_evidence.append(ev)
+
+        # Sort evidence within each hypothesis by confidence (descending)
+        summarized_evidence = []
+        for hypothesis in validated_hypotheses:
+            h_id = hypothesis.get("id", "")
+            if h_id in evidence_by_hypothesis:
+                # Sort by confidence, take top N
+                h_evidence = sorted(
+                    evidence_by_hypothesis[h_id],
+                    key=lambda e: e.get("confidence", 0.5),
+                    reverse=True,
+                )
+                summarized_evidence.extend(h_evidence[:max_per_hypothesis])
+
+        # Add some uncategorized evidence (sorted by confidence)
+        if uncategorized_evidence:
+            uncategorized_sorted = sorted(
+                uncategorized_evidence,
+                key=lambda e: e.get("confidence", 0.5),
+                reverse=True,
+            )
+            remaining_slots = max_total_evidence - len(summarized_evidence)
+            if remaining_slots > 0:
+                summarized_evidence.extend(uncategorized_sorted[:remaining_slots])
+
+        # Final limit to max_total_evidence
+        summarized_evidence = summarized_evidence[:max_total_evidence]
+
+        self.log.info(
+            "evidence.summarized",
+            original_count=len(all_evidence),
+            summarized_count=len(summarized_evidence),
+            compression_ratio=f"{len(summarized_evidence)/len(all_evidence):.1%}",
+        )
+
+        return summarized_evidence
+
     async def _build_narrative(
         self,
         validated_hypotheses: List[Dict[str, Any]],
@@ -1443,8 +1539,16 @@ Note: Free tier has 1 req/sec limit - wait between searches."""
         """
         self.log.info("phase.narrative.start")
 
+        # Summarize evidence to avoid context overflow (Fix #2)
+        summarized_evidence = self._summarize_evidence(
+            all_evidence=all_evidence,
+            validated_hypotheses=validated_hypotheses,
+            max_total_evidence=100,  # Reasonable limit for context
+            max_per_hypothesis=15,    # Top 15 evidence items per hypothesis
+        )
+
         # Prepare evidence bundle
-        evidence_bundle = {"evidence_items": all_evidence}
+        evidence_bundle = {"evidence_items": summarized_evidence}
 
         # Use NarrativeBuilderAgent (now with valuation)
         with self.metrics.timer("agent.narrative_builder"):

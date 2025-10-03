@@ -94,6 +94,7 @@ Always return valid JSON with structured report."""
         )
 
         # Use Sonnet for sophisticated narrative synthesis
+        # Claude Sonnet 4.5 supports 64K output tokens, sufficient for institutional reports
         options = ClaudeAgentOptions(
             system_prompt=self.system_prompt,
             max_turns=1,  # Single comprehensive report
@@ -182,11 +183,73 @@ Always return valid JSON with structured report."""
             "has_valuation": valuation_summary is not None,
         }
 
-        # CRITICAL FIX: Include actual valuation data in report
-        # The LLM generates narrative text about valuation, but we need the numerical data
-        # (current_price, upside_downside_pct, etc.) to be persisted to final_report.json
+        # CRITICAL FIX: Merge valuation data from ValuationAgent with LLM-generated scenarios
+        # The LLM generates scenarios, but ValuationAgent provides DCF numbers
         if valuation_summary:
+            # Preserve LLM-generated scenarios if they exist
+            llm_scenarios = result.get("valuation", {}).get("scenarios", {})
+            llm_methodology = result.get("valuation", {}).get("methodology", "")
+
+            # LOG: Before merge
+            logger.info(
+                "valuation_merge.before",
+                llm_has_valuation_section=("valuation" in result),
+                llm_has_scenarios=bool(llm_scenarios),
+                llm_scenario_keys=list(llm_scenarios.keys()) if llm_scenarios else [],
+                llm_has_methodology=bool(llm_methodology),
+                llm_methodology_length=len(llm_methodology) if llm_methodology else 0,
+                dcf_fair_value=valuation_summary.get("fair_value_per_share"),
+                dcf_has_scenarios=("scenarios" in valuation_summary),
+                merge_strategy="preserve_llm_first",
+            )
+
+            # Start with ValuationAgent's DCF data
             result["valuation"] = valuation_summary
+
+            # Re-add LLM scenarios if they exist
+            if llm_scenarios:
+                result["valuation"]["scenarios"] = llm_scenarios
+                logger.debug(
+                    "valuation_merge.scenarios_preserved",
+                    source="llm",
+                    scenario_count=len(llm_scenarios),
+                )
+
+            # Re-add methodology if it exists
+            if llm_methodology:
+                result["valuation"]["methodology"] = llm_methodology
+                logger.debug(
+                    "valuation_merge.methodology_preserved",
+                    source="llm",
+                    length=len(llm_methodology),
+                )
+
+            # If scenarios are still missing, synthesize them from DCF data + bull/bear analysis
+            if not result["valuation"].get("scenarios"):
+                result["valuation"]["scenarios"] = self._synthesize_scenarios(result, valuation_summary)
+                logger.info(
+                    "valuation_merge.scenarios_synthesized",
+                    source="fallback",
+                    scenario_count=len(result["valuation"]["scenarios"]),
+                )
+
+            # LOG: After merge
+            final_scenarios = result["valuation"].get("scenarios", {})
+            logger.info(
+                "valuation_merge.after",
+                final_has_scenarios=bool(final_scenarios),
+                final_scenario_keys=list(final_scenarios.keys()) if final_scenarios else [],
+                final_scenario_prices={
+                    k: v.get("price_target")
+                    for k, v in final_scenarios.items()
+                } if final_scenarios else {},
+                final_has_methodology=bool(result["valuation"].get("methodology")),
+                data_sources={
+                    "scenarios": "llm" if llm_scenarios else "synthesized",
+                    "methodology": "llm" if llm_methodology else "missing",
+                    "dcf_numbers": "valuation_agent",
+                },
+            )
 
         return result
 
@@ -266,9 +329,10 @@ REQUIRED SECTIONS:
    - Cash flow (FCF quality + capital allocation in 1 paragraph)
    - Balance sheet (leverage + liquidity in 2-3 sentences)
 
-4. VALUATION (include DCF table, scenario table)
+4. VALUATION (include DCF table, scenario table - MANDATORY)
    - DCF assumptions (bullet format)
-   - Scenario analysis (bull/base/bear with probabilities)
+   - Scenario analysis (bull/base/bear with probabilities) - MUST INCLUDE TABLE
+   - Each scenario must have: price_target, probability, key_conditions (2-3 bullet points)
    - Key sensitivities (top 2-3 only)
 
 5. BULL CASE & BEAR CASE (combined 1-2 pages)
@@ -288,8 +352,8 @@ REQUIRED SECTIONS:
    - Clear action (BUY/HOLD/SELL)
    - Conviction level (HIGH/MEDIUM/LOW) with 1-sentence rationale
    - Position sizing (recommended % of portfolio)
-   - Entry conditions (top 3 only)
-   - Exit conditions (top 3 only)
+   - Entry conditions (top 3 SPECIFIC triggers - include price levels or qualitative events)
+   - Exit conditions (top 3 SPECIFIC triggers - include price levels or qualitative events)
    - Key monitoring metrics (top 3 only)
 
 FORMATTING RULES:
@@ -341,11 +405,23 @@ OUTPUT FORMAT (JSON only, no other text):
     "balance_sheet": "Financial strength assessment"
   }},
   "valuation": {{
-    "methodology": "DCF approach and assumptions",
+    "methodology": "DCF approach: State WACC (%), terminal growth (%), terminal margin (%), and any key assumptions. Be specific with numbers.",
     "scenarios": {{
-      "bull": {{"price_target": 150, "probability": 0.35}},
-      "base": {{"price_target": 120, "probability": 0.45}},
-      "bear": {{"price_target": 90, "probability": 0.20}}
+      "bull": {{
+        "price_target": 150,
+        "probability": 0.35,
+        "key_conditions": ["Condition 1 for bull case", "Condition 2 for bull case"]
+      }},
+      "base": {{
+        "price_target": 120,
+        "probability": 0.45,
+        "key_conditions": ["Condition 1 for base case", "Condition 2 for base case"]
+      }},
+      "bear": {{
+        "price_target": 90,
+        "probability": 0.20,
+        "key_conditions": ["Condition 1 for bear case", "Condition 2 for bear case"]
+      }}
     }},
     "sensitivity": "Key assumptions and sensitivities",
     "price_target": 120,
@@ -379,10 +455,11 @@ OUTPUT FORMAT (JSON only, no other text):
     "action": "BUY|HOLD|SELL",
     "conviction": "HIGH|MEDIUM|LOW",
     "timeframe": "2-3 years",
-    "entry_conditions": ["When to buy", "..."],
-    "exit_conditions": ["When to sell", "..."],
-    "position_sizing": "Suggested allocation guidance",
-    "monitoring_metrics": ["KPI 1", "KPI 2", "..."]
+    "entry_conditions": ["Specific price level or event trigger 1", "Specific price level or event trigger 2", "Specific price level or event trigger 3"],
+    "exit_conditions": ["Specific price level or event trigger 1", "Specific price level or event trigger 2", "Specific price level or event trigger 3"],
+    "position_sizing": "Suggested allocation guidance (e.g., 5-7% of portfolio)",
+    "monitoring_metrics": ["KPI 1", "KPI 2", "..."],
+    "rationale": "1-sentence explanation for recommendation"
   }}
 }}
 
@@ -471,8 +548,85 @@ IMPORTANT: Generate comprehensive, evidence-based report with >= 80% evidence co
 
         return "\n".join(formatted)
 
+    def _synthesize_scenarios(
+        self, report: Dict[str, Any], valuation_summary: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Synthesize scenario analysis from DCF data and bull/bear analysis.
+
+        Fallback method when LLM doesn't generate scenarios in correct format.
+        Extracts price targets from bull_bear_analysis and combines with DCF base case.
+
+        Args:
+            report: Full report dict with bull_bear_analysis section
+            valuation_summary: ValuationAgent's DCF data
+
+        Returns:
+            Scenarios dict with bull/base/bear cases
+        """
+        # Get base case from DCF
+        base_price = valuation_summary.get("fair_value_per_share", 0)
+
+        # Extract bull/bear analysis if available
+        bull_bear = report.get("bull_bear_analysis", {})
+        bull_case = bull_bear.get("bull_case", {})
+        bear_case = bull_bear.get("bear_case", {})
+
+        # Try to extract key conditions from arguments
+        bull_conditions = []
+        if isinstance(bull_case.get("arguments"), list):
+            bull_conditions = [
+                arg.get("claim", "") for arg in bull_case.get("arguments", [])[:3]
+            ]
+        elif bull_case.get("arguments"):
+            # Fallback: use summary or first few sentences
+            bull_conditions = [bull_case.get("summary", "Bull case scenario")]
+
+        bear_conditions = []
+        if isinstance(bear_case.get("arguments"), list):
+            bear_conditions = [
+                arg.get("claim", "") for arg in bear_case.get("arguments", [])[:3]
+            ]
+        elif bear_case.get("arguments"):
+            bear_conditions = [bear_case.get("summary", "Bear case scenario")]
+
+        # Calculate price targets (bull +40%, bear -25% from base)
+        bull_price = round(base_price * 1.4, 2)
+        bear_price = round(base_price * 0.75, 2)
+
+        # Default base conditions
+        base_conditions = [
+            "Base case assumptions hold",
+            "Market conditions remain stable",
+            "No major competitive disruption",
+        ]
+
+        # Build scenarios
+        scenarios = {
+            "bull": {
+                "price_target": bull_price,
+                "probability": 0.35,
+                "key_conditions": bull_conditions[:3]
+                if bull_conditions
+                else ["Upside scenario conditions"],
+            },
+            "base": {
+                "price_target": base_price,
+                "probability": 0.45,
+                "key_conditions": base_conditions,
+            },
+            "bear": {
+                "price_target": bear_price,
+                "probability": 0.20,
+                "key_conditions": bear_conditions[:3]
+                if bear_conditions
+                else ["Downside scenario conditions"],
+            },
+        }
+
+        return scenarios
+
     def _parse_response(self, response_text: str) -> Dict[str, Any]:
-        """Parse JSON response from Claude.
+        """Parse JSON response from Claude with multiple extraction strategies.
 
         Args:
             response_text: Response text from query()
@@ -483,46 +637,145 @@ IMPORTANT: Generate comprehensive, evidence-based report with >= 80% evidence co
         Raises:
             ValueError: If JSON parsing fails or structure invalid
         """
-        # Strip code fence markers if present (```json ... ```)
-        response_text = response_text.replace("```json", "").replace("```", "")
-        try:
-            # Find JSON in response
+        # Strategy 1: Try multiple code fence patterns
+        patterns = [
+            (r"```json\s*(.*?)\s*```", "json code fence"),
+            (r"```\s*(.*?)\s*```", "generic code fence"),
+            (r"\{.*\}", "raw JSON braces"),
+        ]
+
+        json_str = None
+        strategy_used = None
+
+        for pattern, desc in patterns:
+            import re
+            match = re.search(pattern, response_text, re.DOTALL)
+            if match:
+                json_str = match.group(1) if match.lastindex else match.group(0)
+                strategy_used = desc
+                break
+
+        # Fallback: Find first { to last }
+        if not json_str:
             start = response_text.find("{")
             end = response_text.rfind("}") + 1
             if start >= 0 and end > start:
                 json_str = response_text[start:end]
-                result = json.loads(json_str)
+                strategy_used = "brace search"
 
-                # Validate structure
-                required_keys = {
-                    "executive_summary",
-                    "investment_thesis",
-                    "financial_analysis",
-                    "valuation",
-                    "bull_bear_analysis",
-                    "risks",
-                    "recommendation",
-                }
-                if not required_keys.issubset(set(result.keys())):
-                    missing = required_keys - set(result.keys())
-                    raise ValueError(f"Response missing keys: {missing}")
-
-                # Validate recommendation
-                if "action" not in result["recommendation"]:
-                    raise ValueError("recommendation missing 'action' key")
-                if result["recommendation"]["action"] not in ["BUY", "HOLD", "SELL"]:
-                    raise ValueError(
-                        f"Invalid recommendation action: {result['recommendation']['action']}"
-                    )
-
-                return result
-            else:
-                raise ValueError(f"No JSON found in response: {response_text[:200]}...")
-
-        except json.JSONDecodeError as e:
+        if not json_str:
+            # Enhanced error with response preview
+            preview = response_text[:500] if len(response_text) > 500 else response_text
             raise ValueError(
-                f"Failed to parse JSON: {e}\nResponse: {response_text[:200]}..."
+                f"No JSON found in response using any strategy.\n"
+                f"Response length: {len(response_text)} chars\n"
+                f"Preview:\n{preview}\n"
+                f"...(truncated)" if len(response_text) > 500 else ""
             )
+
+        # Strategy 2: Try parsing with error recovery
+        parse_errors = []
+
+        try:
+            result = json.loads(json_str)
+            logger.info(f"narrative.json_parsed", strategy=strategy_used)
+        except json.JSONDecodeError as e:
+            parse_errors.append(f"Initial parse failed: {e}")
+
+            # Try fixing common issues
+            # Issue 1: Truncated JSON - try to close it
+            if not json_str.rstrip().endswith("}"):
+                logger.warning("narrative.json_truncated", attempting_fix=True)
+                # Count open/close braces
+                open_braces = json_str.count("{")
+                close_braces = json_str.count("}")
+                if open_braces > close_braces:
+                    # Add missing closing braces
+                    json_str_fixed = json_str + ("}" * (open_braces - close_braces))
+                    try:
+                        result = json.loads(json_str_fixed)
+                        logger.info("narrative.json_fixed", method="brace_closing")
+                    except json.JSONDecodeError as e2:
+                        parse_errors.append(f"Brace fix failed: {e2}")
+                        raise ValueError(
+                            f"JSON parse failed after all strategies:\n" + "\n".join(parse_errors) +
+                            f"\n\nPartial JSON ({len(json_str)} chars):\n{json_str[:1000]}..."
+                        )
+            else:
+                raise ValueError(
+                    f"JSON parse failed:\n{e}\n\nJSON string ({len(json_str)} chars):\n{json_str[:1000]}..."
+                )
+
+        # Validate structure with detailed error reporting
+        required_keys = {
+            "executive_summary",
+            "investment_thesis",
+            "financial_analysis",
+            "valuation",
+            "bull_bear_analysis",
+            "risks",
+            "recommendation",
+        }
+
+        actual_keys = set(result.keys())
+        if not required_keys.issubset(actual_keys):
+            missing = required_keys - actual_keys
+            extra = actual_keys - required_keys
+            error_msg = f"Response structure invalid.\nMissing keys: {missing}"
+            if extra:
+                error_msg += f"\nUnexpected keys: {extra}"
+            raise ValueError(error_msg)
+
+        # Validate recommendation
+        if "action" not in result.get("recommendation", {}):
+            raise ValueError("recommendation missing 'action' key")
+        if result["recommendation"]["action"] not in ["BUY", "HOLD", "SELL"]:
+            raise ValueError(
+                f"Invalid recommendation action: {result['recommendation']['action']}"
+            )
+
+        # LOG: LLM output structure (before schema validation)
+        valuation_section = result.get("valuation", {})
+        logger.info(
+            "llm_output.structure",
+            sections=list(result.keys()),
+            recommendation_action=result.get("recommendation", {}).get("action"),
+            has_valuation_section=bool(valuation_section),
+            valuation_has_scenarios=("scenarios" in valuation_section),
+            valuation_has_methodology=("methodology" in valuation_section),
+            valuation_scenario_keys=list(valuation_section.get("scenarios", {}).keys()) if "scenarios" in valuation_section else [],
+        )
+
+        # PHASE 1C: Schema validation on LLM output
+        from investing_agents.schemas.report import validate_llm_output
+
+        validation_result = validate_llm_output(result, strict=False)
+
+        if not validation_result.is_valid:
+            # Log detailed validation errors
+            logger.error(
+                "llm_output.schema_validation_failed",
+                error_count=len(validation_result.errors),
+                errors=validation_result.errors,
+                warnings=validation_result.warnings,
+            )
+            # Log human-readable summary for debugging
+            logger.warning(
+                "llm_output.validation_summary",
+                summary=validation_result.get_error_summary(),
+            )
+            # Don't raise - allow processing to continue with warnings
+        elif validation_result.warnings:
+            # Log quality warnings even if validation passed
+            logger.warning(
+                "llm_output.quality_warnings",
+                warning_count=len(validation_result.warnings),
+                warnings=validation_result.warnings,
+            )
+        else:
+            logger.info("llm_output.schema_valid", message="All validations passed")
+
+        return result
 
     def calculate_evidence_coverage(self, report: Dict[str, Any]) -> float:
         """Calculate what percentage of claims have evidence references.

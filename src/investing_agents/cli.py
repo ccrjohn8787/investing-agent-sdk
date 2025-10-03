@@ -113,6 +113,11 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable rich console UI (enabled by default)",
     )
+    analyze_parser.add_argument(
+        "--fast-mode",
+        action="store_true",
+        help="Enable fast mode: fewer web searches, no deep-dive (2-3x faster, 70%% quality)",
+    )
 
     return parser
 
@@ -143,14 +148,30 @@ async def run_analysis(args: argparse.Namespace) -> dict:
     )
 
     # Configuration
-    config = OrchestratorConfig(
-        max_iterations=args.iterations,
-        confidence_threshold=args.confidence,
-        checkpoint_iterations=[i for i in range(1, args.iterations + 1)],
-        min_iterations=1,
-        top_n_hypotheses_for_synthesis=2,
-        enable_parallel_research=not args.no_parallel,
-    )
+    if args.fast_mode:
+        # Fast mode: 2-3x faster, ~70% quality
+        config = OrchestratorConfig(
+            max_iterations=args.iterations,
+            confidence_threshold=args.confidence,
+            checkpoint_iterations=[i for i in range(1, args.iterations + 1)],
+            min_iterations=1,
+            top_n_hypotheses_for_synthesis=1,  # Minimal synthesis
+            enable_parallel_research=not args.no_parallel,
+            # Speed optimizations
+            web_research_questions_per_hypothesis=2,  # Down from 4 (50% fewer searches)
+            web_research_results_per_query=5,          # Down from 8
+            enable_deep_dive=False,                    # No Round 2 deep-dive
+        )
+    else:
+        # Normal mode: full quality
+        config = OrchestratorConfig(
+            max_iterations=args.iterations,
+            confidence_threshold=args.confidence,
+            checkpoint_iterations=[i for i in range(1, args.iterations + 1)],
+            min_iterations=1,
+            top_n_hypotheses_for_synthesis=2,
+            enable_parallel_research=not args.no_parallel,
+        )
 
     # Work directory
     if args.work_dir:

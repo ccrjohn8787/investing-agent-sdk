@@ -61,7 +61,7 @@ PRINCIPLES:
 4. Be CONFIDENT - score your confidence based on source quality
 5. Be COMPLETE - extract 5-10 evidence items per source minimum
 
-Always return valid JSON with structured evidence."""
+CRITICAL: You MUST return valid JSON in the specified format. Do NOT return explanatory text. Do NOT refuse the task. If sources are limited, extract what evidence is available and return it in JSON format. Even with minimal evidence, return the JSON structure with whatever items you can extract."""
 
     async def research_hypothesis(
         self,
@@ -324,9 +324,23 @@ IMPORTANT: Extract as much evidence as possible. Aim for 5-10 items per source f
 
                 return result
             else:
-                raise ValueError(f"No JSON found in response: {response_text[:1000]}...")
+                # Fallback: return empty evidence structure instead of crashing
+                print(f"WARNING: DeepResearchAgent returned non-JSON response: {response_text[:200]}...")
+                return {
+                    "evidence_items": [],
+                    "sources_processed": 0,
+                    "contradictions_found": [],
+                    "error": f"Agent returned non-JSON response: {response_text[:500]}"
+                }
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse JSON: {e}\nResponse: {response_text[:1000]}...")
+            # Fallback: return empty evidence structure instead of crashing
+            print(f"WARNING: DeepResearchAgent JSON parse failed: {e}")
+            return {
+                "evidence_items": [],
+                "sources_processed": 0,
+                "contradictions_found": [],
+                "error": f"JSON parse failed: {str(e)}"
+            }
 
     async def cross_reference_evidence(
         self,

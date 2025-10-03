@@ -175,7 +175,9 @@ class SourceManager:
         # Add shares outstanding
         if fundamentals.shares_out:
             lines.append("")
-            lines.append(f"Shares Outstanding: {fundamentals.shares_out:,.0f}")
+            shares_millions = fundamentals.shares_out / 1e6
+            lines.append(f"Shares Outstanding: {shares_millions:,.1f} million shares")
+            lines.append(f"  (Raw count: {fundamentals.shares_out:,.0f})")
 
         # Add tax rate
         if fundamentals.tax_rate:

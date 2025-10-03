@@ -15,7 +15,10 @@ from typing import Any, Dict, List, Optional
 import structlog
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, TextBlock, query
 
-from investing_agents.connectors.price_fetcher import fetch_current_price
+from investing_agents.connectors.price_fetcher import (
+    fetch_current_price,
+    fetch_financial_fundamentals,
+)
 from investing_agents.observability import ReasoningTrace
 from investing_agents.schemas.inputs import Drivers, InputsI
 from investing_agents.valuation.ginzu import value as calculate_dcf, series as get_series
@@ -208,76 +211,103 @@ Always return valid JSON with structured projections."""
         Returns:
             Dict with extracted financial metrics
         """
+        # STEP 1: Fetch factual data from API (primary source)
+        api_data = None
+        try:
+            api_data = await fetch_financial_fundamentals(ticker)
+            logger.info(
+                "valuation.api_fundamentals_fetched",
+                ticker=ticker,
+                completeness=api_data.get("data_quality", {}).get("completeness_pct", 0),
+                available=len(api_data.get("data_quality", {}).get("available_fields", [])),
+            )
+        except Exception as e:
+            logger.warning(
+                "valuation.api_fetch_failed_fallback_to_llm",
+                ticker=ticker,
+                error=str(e),
+            )
+
+        # STEP 2: Use LLM to extract data from evidence (fallback + narrative-derived fields)
+        # Build status message about API data availability
+        api_status = "NO API DATA AVAILABLE - extract all fields from evidence" if not api_data else (
+            f"API DATA AVAILABLE: We already have factual data from Yahoo Finance API (shares outstanding, revenue, margins, debt, cash, tax rate). "
+            f"You only need to extract HISTORICAL GROWTH RATES and make ASSUMPTIONS."
+        )
+
         prompt = f"""Extract current financial fundamentals for {company} ({ticker}) from the evidence below.
+
+{api_status}
 
 EVIDENCE ITEMS ({len(evidence)} total):
 {self._format_evidence_for_prompt(evidence[:30])}  # Limit to 30 most relevant
 
 YOUR TASK:
-Extract the following metrics with SPECIFIC NUMBERS and SOURCES:
+{"Since we already have factual data from the API, focus on:" if api_data else "Extract the following metrics with SPECIFIC NUMBERS and SOURCES:"}
 
-1. **Current Revenue** (most recent TTM or fiscal year):
-   - Total revenue in $ (millions or billions)
-   - Time period (e.g., "FY2024", "TTM Q4 2024")
-   - Source (10-K, 10-Q, earnings release)
+{"1. **Historical Revenue Growth** (past 3-5 years) - THIS IS THE MAIN THING WE NEED:" if api_data else "1. **Current Revenue** (most recent TTM or fiscal year):"}
+   {"- Year-over-year growth rates" if api_data else "- Total revenue in $ (millions or billions)"}
+   {"- Source" if api_data else "- Time period (e.g., 'FY2024', 'TTM Q4 2024')"}
+   {"" if api_data else "- Source (10-K, 10-Q, earnings release)"}
 
-2. **Operating Margin** (most recent):
-   - Operating margin as %
-   - Time period
-   - Source
+{"2. **Assumptions about the company:**" if api_data else "2. **Operating Margin** (most recent):"}
+   {"- List any important assumptions about business model, growth drivers, risks" if api_data else "- Operating margin as %"}
+   {"" if api_data else "- Time period"}
+   {"" if api_data else "- Source"}
 
-3. **Historical Revenue Growth** (past 3-5 years):
-   - Year-over-year growth rates
-   - Source
+{"" if api_data else "3. **Historical Revenue Growth** (past 3-5 years):"}
+   {"" if api_data else "- Year-over-year growth rates"}
+   {"" if api_data else "- Source"}
 
-4. **Balance Sheet** (most recent quarter):
-   - Total debt ($ millions/billions)
-   - Cash and equivalents ($ millions/billions)
-   - Shares outstanding (millions)
-   - Source
+{"" if api_data else "4. **Balance Sheet** (most recent quarter):"}
+   {"" if api_data else "- Total debt ($ millions/billions)"}
+   {"" if api_data else "- Cash and equivalents ($ millions/billions)"}
+   {"" if api_data else "- Shares outstanding (**IMPORTANT: Must be in MILLIONS, not billions or thousands. Example: if you see '2.5 billion shares', enter 2500. If you see '2,540 million shares', enter 2540**)"}
+   {"" if api_data else "- Source"}
 
-5. **Current Stock Price** (if mentioned in evidence):
-   - Price per share ($)
-   - Date
-   - Source
+{"" if api_data else "5. **Current Stock Price** (if mentioned in evidence):"}
+   {"" if api_data else "- Price per share ($)"}
+   {"" if api_data else "- Date"}
+   {"" if api_data else "- Source"}
 
-6. **Tax Rate**:
-   - Effective tax rate (%)
-   - Source
+{"" if api_data else "6. **Tax Rate**:"}
+   {"" if api_data else "- Effective tax rate (%)"}
+   {"" if api_data else "- Source"}
 
 OUTPUT FORMAT (JSON only):
 {{
-  "revenue_current": {{
-    "value_billions": ...,
-    "period": "...",
-    "source": "..."
-  }},
-  "operating_margin": {{
-    "value_pct": ...,
-    "period": "...",
-    "source": "..."
-  }},
+  {"// NOTE: We already have factual data from API, so you can set these to null:" if api_data else ""}
+  "revenue_current": {"null," if api_data else "{"} {"// Already from API" if api_data else ""}
+    {'"value_billions": ...,' if not api_data else ""}
+    {'"period": "...",' if not api_data else ""}
+    {'"source": "..."' if not api_data else ""}
+  {"" if api_data else "},"}
+  "operating_margin": {"null," if api_data else "{"} {"// Already from API" if api_data else ""}
+    {'"value_pct": ...,' if not api_data else ""}
+    {'"period": "...",' if not api_data else ""}
+    {'"source": "..."' if not api_data else ""}
+  {"" if api_data else "},"}
   "historical_growth": {{
-    "rates_pct": [...],  // List of YoY growth rates
+    "rates_pct": [...],  // List of YoY growth rates - EXTRACT THIS!
     "periods": [...],
     "source": "..."
   }},
-  "balance_sheet": {{
-    "total_debt_billions": ...,
-    "cash_billions": ...,
-    "shares_out_millions": ...,
-    "period": "...",
-    "source": "..."
-  }},
-  "current_price": {{
-    "price_per_share": ...,
-    "date": "...",
-    "source": "..."
-  }},
-  "tax_rate": {{
-    "effective_rate_pct": ...,
-    "source": "..."
-  }},
+  "balance_sheet": {"null," if api_data else "{"} {"// Already from API" if api_data else ""}
+    {'"total_debt_billions": ...,' if not api_data else ""}
+    {'"cash_billions": ...,' if not api_data else ""}
+    {'"shares_out_millions": ...,  // CRITICAL: Always in MILLIONS. Example: 2.5B shares = 2500, NOT 2.5' if not api_data else ""}
+    {'"period": "...",' if not api_data else ""}
+    {'"source": "..."' if not api_data else ""}
+  {"" if api_data else "},"}
+  "current_price": {"null," if api_data else "{"} {"// Already from API" if api_data else ""}
+    {'"price_per_share": ...,' if not api_data else ""}
+    {'"date": "...",' if not api_data else ""}
+    {'"source": "..."' if not api_data else ""}
+  {"" if api_data else "},"}
+  "tax_rate": {"null," if api_data else "{"} {"// Already from API" if api_data else ""}
+    {'"effective_rate_pct": ...,' if not api_data else ""}
+    {'"source": "..."' if not api_data else ""}
+  {"" if api_data else "},"}
   "assumptions": [
     "Assumption 1: ...",
     "Assumption 2: ..."
@@ -285,9 +315,9 @@ OUTPUT FORMAT (JSON only):
 }}
 
 IMPORTANT:
-- Use ONLY numbers found in evidence - do not estimate or assume
-- If data not available, use null
-- Cite specific evidence sources (e.g., "10-K FY2024 page 45")
+{"- For factual data (revenue, margin, debt, cash, shares, price, tax rate): Set to null since we have API data" if api_data else "- Use ONLY numbers found in evidence - do not estimate or assume"}
+{"- FOCUS ON: Historical growth rates and business assumptions" if api_data else "- If data not available, use null"}
+{"- Do not worry about missing balance sheet items - we have them from the API" if api_data else "- Cite specific evidence sources (e.g., '10-K FY2024 page 45')"}
 """
 
         options = ClaudeAgentOptions(
@@ -313,19 +343,82 @@ IMPORTANT:
         # Parse response
         financials = self._parse_json_response(full_response)
 
-        # Convert to flat structure for easier use
+        # STEP 3: Combine API data (primary) with LLM data (fallback + narrative fields)
+        # Priority: API data > LLM-extracted data > defaults
         result = {
-            "revenue_t0_billions": financials.get("revenue_current", {}).get("value_billions"),
-            "operating_margin_pct": financials.get("operating_margin", {}).get("value_pct"),
+            # Factual data: Prioritize API
+            "revenue_t0_billions": (
+                api_data.get("total_revenue_billions") if api_data
+                else financials.get("revenue_current", {}).get("value_billions")
+            ),
+            "operating_margin_pct": (
+                api_data.get("operating_margin_pct") if api_data
+                else financials.get("operating_margin", {}).get("value_pct")
+            ),
+            "total_debt_billions": (
+                api_data.get("total_debt_billions") if api_data
+                else financials.get("balance_sheet", {}).get("total_debt_billions")
+            ),
+            "cash_billions": (
+                api_data.get("total_cash_billions") if api_data
+                else financials.get("balance_sheet", {}).get("cash_billions")
+            ),
+            "shares_out_millions": (
+                api_data.get("shares_outstanding_millions") if api_data
+                else financials.get("balance_sheet", {}).get("shares_out_millions")
+            ),
+            "current_price": (
+                api_data.get("current_price") if api_data
+                else financials.get("current_price", {}).get("price_per_share")
+            ),
+            "tax_rate_pct": (
+                api_data.get("effective_tax_rate_pct") if api_data
+                else financials.get("tax_rate", {}).get("effective_rate_pct", 25.0)
+            ),
+
+            # Narrative-derived data: Always from LLM (not available in API)
             "historical_growth_rates": financials.get("historical_growth", {}).get("rates_pct", []),
-            "total_debt_billions": financials.get("balance_sheet", {}).get("total_debt_billions"),
-            "cash_billions": financials.get("balance_sheet", {}).get("cash_billions"),
-            "shares_out_millions": financials.get("balance_sheet", {}).get("shares_out_millions"),
-            "current_price": financials.get("current_price", {}).get("price_per_share"),
-            "tax_rate_pct": financials.get("tax_rate", {}).get("effective_rate_pct", 25.0),  # Default 25%
             "assumptions": financials.get("assumptions", []),
-            "raw": financials,  # Keep original structure
+
+            # Metadata
+            "raw": financials,  # Keep original LLM structure
+            "api_data": api_data,  # Keep API data for debugging
+            "data_source": "API_primary" if api_data else "LLM_only",
         }
+
+        # Log which data source was used for critical fields
+        logger.info(
+            "valuation.data_sources",
+            ticker=ticker,
+            shares_source="API" if (api_data and api_data.get("shares_outstanding_millions")) else "LLM",
+            revenue_source="API" if (api_data and api_data.get("total_revenue_billions")) else "LLM",
+            margin_source="API" if (api_data and api_data.get("operating_margin_pct")) else "LLM",
+        )
+
+        # Validate shares outstanding (detect units confusion)
+        shares_millions = result.get("shares_out_millions")
+        if shares_millions is not None:
+            # For large-cap companies ($200B+ revenue), expect > 500M shares
+            # If we got < 100, likely confusion (billions entered as millions)
+            revenue_billions = result.get("revenue_t0_billions", 0)
+            if revenue_billions > 50 and shares_millions < 100:
+                logger.warning(
+                    "valuation.shares_validation_failed",
+                    shares_millions=shares_millions,
+                    revenue_billions=revenue_billions,
+                    issue="Shares outstanding seems too low - possible units confusion (billions vs millions)?",
+                    suggested_fix=f"If shares are actually {shares_millions}B, should be {shares_millions * 1000}M",
+                )
+                # Auto-correct if it looks like billions were entered as millions
+                if shares_millions < 10:  # Almost certainly billions misinterpreted
+                    corrected = shares_millions * 1000
+                    logger.warning(
+                        "valuation.shares_auto_corrected",
+                        original=shares_millions,
+                        corrected=corrected,
+                        reason="Value < 10 for large company - assuming billions entered as millions",
+                    )
+                    result["shares_out_millions"] = corrected
 
         logger.info(
             "valuation.financials_extracted",
