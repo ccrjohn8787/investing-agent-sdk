@@ -520,24 +520,66 @@ See `LOGGING_AND_OBSERVABILITY.md` for details.
 - Agent performance
 - Cache hit rates
 
-## Future Enhancements
+## Implementation Roadmap
 
-### Phase 2 (After Initial Release)
+**Current Status**: Phase 1-3 Complete (Production-ready base system)
+**Strategic Planning**: Complete (October 2025)
+**Next Phase**: Phase 0 - Evaluation Infrastructure (Weeks 1-2)
+
+### Phase 0: Evaluation Infrastructure (Weeks 1-2) - NEXT
+
+**Purpose**: Build evaluation harness BEFORE enhancements (RL curriculum approach from Tauric Research)
+
+**Deliverables**:
+- 3-tier evaluation corpus (30 historical cases from 2020-2023)
+- ChromaDB memory system (3 collections)
+- Baseline metrics (current agent performance)
+- Data source stack finalized (SEC EDGAR + Yahoo + Brave)
+
+**See**: `docs/VALUATION_AI_FRONTIER.md` Section X for detailed roadmap
+
+### Phase 1: Data Moat + Institutional Rigor (Months 1-3)
+
+**Target**: 58 → 96/100 capability (exceeds 90 target)
+
+**Key Enhancements**:
+1. Scenario DCF (bear/base/bull) [+10 points]
+2. Backtesting framework (frozen fundamentals) [+10 points]
+3. Enhanced research sources (trusted source scraper) [+5 points]
+4. Memory-enhanced hypothesis generation [+8 points]
+5. Institutional report features (recommendation, entry/exit, thesis, risk) [+5 points]
+
+**See**: `docs/BACKTESTING_DESIGN.md`, `docs/MEMORY_SYSTEM_ARCHITECTURE.md`
+
+### Phase 2: Behavioral Edge (Months 4-6) - OPTIONAL
+
+**Conditional**: Only if Phase 1 testing reveals systematic gaps
+
+**Potential Enhancements**:
+- ContrarianAgent (memory-enhanced)
+- SentimentAnalysisAgent (pattern-aware)
+- MetaReasoningAgent + reflection mechanism
+
+### Future Enhancements (Beyond Phase 2)
 
 - Portfolio-level analysis (multiple companies)
 - Real-time updates (triggered by news/filings)
 - Comparative analysis (company A vs company B)
-- Backtesting framework (historical analyses)
-
-### Phase 3 (Advanced Features)
-
 - Custom hypothesis templates
-- User-guided iteration (human-in-loop)
-- Multi-language support
 - Integration with trading platforms
 
 ---
 
-**Document Version**: 1.0.0
-**Last Updated**: 2024-09-30
-**Next Review**: After Phase 1 implementation
+## Strategic Planning Documents
+
+**Primary Roadmap**: `docs/VALUATION_AI_FRONTIER.md` - Comprehensive gap analysis and hill-climbing strategy
+**Strategic Synthesis**: `docs/competitive_analysis/STRATEGIC_PLANNING_SYNTHESIS.md` - Complete planning wrap-up
+**Data Sources**: `docs/DATA_SOURCE_EVALUATION.md` - Comprehensive data source evaluation
+**Memory System**: `docs/MEMORY_SYSTEM_ARCHITECTURE.md` - Multi-source memory design
+**Backtesting**: `docs/BACKTESTING_DESIGN.md` - Historical validation approach
+
+---
+
+**Document Version**: 2.0.0
+**Last Updated**: 2025-10-03 (Post-strategic planning)
+**Next Review**: After Phase 0 complete (Week 2)

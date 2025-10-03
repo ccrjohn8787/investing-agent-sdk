@@ -83,10 +83,23 @@ src/investing_agents/
 │   └── valuation_server.py   # 3 MCP tools: calculate_dcf, get_series, sensitivity_analysis
 ├── connectors/
 │   └── edgar.py              # SEC EDGAR API (httpx-based, not requests)
-├── core/                     # [Pending] Orchestrator
-├── agents/                   # [Pending] Agent implementations
-├── tools/                    # [Pending] Additional tools
-└── evaluation/               # [Pending] Quality metrics
+├── core/
+│   ├── orchestrator.py       # Main coordination loop (✅ Complete)
+│   ├── memory.py             # [Planned] Multi-source memory system (ChromaDB)
+│   └── state.py              # Analysis state management
+├── agents/
+│   ├── hypothesis_generator.py  # ✅ Complete
+│   ├── deep_research.py         # ✅ Complete
+│   ├── dialectical_engine.py   # ✅ Complete
+│   ├── narrative_builder.py    # ✅ Complete
+│   ├── valuation_agent.py       # ✅ Complete
+│   └── evaluator.py             # ✅ Complete
+├── tools/
+│   └── [Planned] Insider sentiment, sentiment analysis, trusted source scraping
+├── evaluation/
+│   └── pm_evaluator.py       # ✅ Complete (A-F grading system)
+└── output/
+    └── html_report.py        # ✅ Complete (institutional-grade HTML)
 ```
 
 ### Critical Implementation Details
@@ -328,22 +341,104 @@ Value_per_share = Equity_value / Shares_outstanding
 **Implementation Plan**: `docs/IMPLEMENTATION_ROADMAP.md` - 30-day roadmap
 **Progress Tracking**: `PROGRESS.md` - Current status and metrics
 **Verification Report**: `VALUATION_VERIFICATION.md` - Mathematical verification proof
+**Gap Analysis & Strategy**: `docs/VALUATION_AI_FRONTIER.md` - 6-factor model, roadmap to 90/100
+**Memory System**: `docs/MEMORY_SYSTEM_ARCHITECTURE.md` - Multi-source memory with personal knowledge + trusted sources
+**Data Sources**: `docs/DATA_SOURCE_EVALUATION.md` - Comprehensive evaluation of financial data sources (SEC EDGAR, Yahoo Finance, MCP servers)
+**Competitive Analysis**: `docs/competitive_analysis/PROCESS.md` - Framework for learning from alternative systems
+**Strategic Planning**: `docs/competitive_analysis/STRATEGIC_PLANNING_SYNTHESIS.md` - Complete strategic planning wrap-up
 
 ## What's Next
 
-**Phase 1 Remaining (Days 4-5)**: Build basic orchestrator
-- Iteration loop coordinator
-- File-based state persistence
-- Structured logging (console + JSON)
+**Current Focus**: Hill-climbing to 90/100 capability (current: 58/100)
 
-**Phase 2 (Days 6-12)**: Build 5 core agents
-- Each agent tested individually before integration
-- Cost optimizations verified (Haiku vs Sonnet tiering)
+**Phase 0 (Week 1-2)**: Foundation Infrastructure
+- Build evaluation harness (30 historical cases from 2020)
+- Set up ChromaDB memory system (3 collections: analysis, personal knowledge, trusted sources)
+- Start storing every analysis from Day 1 for pattern accumulation
 
-**Phase 3 (Days 13-19)**: Integration
-- Connect agents in orchestration loop
-- Progressive summarization
-- Error handling and retry logic
+**Phase 1 (Months 1-3)**: Data Moat + Memory Foundation
+- ManagementQualityAgent + insider sentiment (FinnHub API)
+- Enhanced research sources + parallel data collection
+- CompetitivePositionAgent + three-way analysis
+- Target: 58 → 75 (+17 points)
+
+**Phase 2 (Months 4-6)**: Behavioral Edge + Reflection
+- ContrarianAgent (memory-enhanced)
+- SentimentAnalysisAgent (pattern-aware)
+- MetaReasoningAgent + reflection mechanism
+- Target: 75 → 82 (+7 points)
+
+**Phase 3 (Months 7-12)**: Pattern Recognition at Scale
+- Similarity search & pattern extraction
+- Backtesting engine (50 historical cases)
+- Automated A/B testing framework
+- Target: 82 → 90 (+8 points)
+
+See `docs/VALUATION_AI_FRONTIER.md` for detailed roadmap and competitive analysis.
+
+## Memory System Architecture
+
+**Multi-Source Memory** (see `docs/MEMORY_SYSTEM_ARCHITECTURE.md` for full spec):
+
+1. **Analysis Memory**: Every analysis stored with outcomes tracked over 3mo/6mo/1yr/3yr
+   - Pattern recognition: "I've seen this before" reasoning
+   - Reflection mechanism: Lessons learned from prediction errors
+   - ChromaDB collection: `analysis_memory`
+
+2. **Personal Knowledge Base**: Import Notion notes, insights, company understanding
+   - Your proprietary thinking and observations
+   - Continuously updated via manual export or Notion API
+   - ChromaDB collection: `personal_knowledge`
+
+3. **Trusted Sources**: Automated monitoring of expert content
+   - SemiAnalysis (Dylan Patel): Semiconductor analysis
+   - Damodaran blog: Valuation frameworks
+   - Other curated sources (expandable)
+   - Scraping agent runs daily, extracts insights
+   - ChromaDB collection: `trusted_sources`
+
+**Integration with Agents**:
+- HypothesisGenerator: Query personal knowledge + expert insights before generating hypotheses
+- DeepResearch: Cross-reference findings with prior understanding, avoid redundant research
+- NarrativeBuilder: Attribute insights to sources (personal notes, SemiAnalysis, etc.)
+
+**Implementation Timeline**:
+- Week 1-2: Set up ChromaDB infrastructure, basic import scripts
+- Week 3-4: Build TrustedSourceScraperAgent, RSS/YouTube integration
+- Week 5-6: Enhance agents with memory-aware prompting
+
+## Competitive Analysis Process
+
+**Framework for Learning from Alternative Systems** (see `docs/competitive_analysis/PROCESS.md`):
+
+**Purpose**: Systematically research alternative investment analysis systems to extract proven patterns and avoid their mistakes. This is a **research and planning process**, not immediate implementation.
+
+**When to Conduct**:
+- When user provides specific frameworks/systems to research
+- Before major architectural decisions
+- When validating technical choices
+
+**How to Use**:
+```bash
+# Invoke the competitor-alternatives-researcher subagent
+# Located at: .claude/agents/competitor-alternatives-researcher.md
+# Provide: Target framework URL + specific research questions
+# Output: Structured analysis saved to docs/competitive_analysis/YYYY-MM-DD_[framework].md
+```
+
+**Process** (5 steps):
+1. **Scope Definition** (30 min): Define what and why
+2. **Deep Research** (2-4 hours): Invoke competitor-alternatives-researcher agent
+3. **Critical Synthesis** (1 hour): What to adopt, what to avoid
+4. **Documentation** (auto-saved by agent): `docs/competitive_analysis/YYYY-MM-DD_[framework].md`
+5. **Strategic Discussion** (user-directed): Discuss findings, refine roadmap
+
+**Documentation Location**: `docs/competitive_analysis/`
+- `PROCESS.md`: Standardized competitive analysis framework
+- `2025-10-02_TradingAgents.md`: Example analysis (memory systems, insider sentiment)
+- Future analyses: User provides queue of frameworks to research
+
+**Note**: Insights inform strategic planning discussions. Implementation decisions are made separately after full discussion.
 
 ## Critical Constraints
 
@@ -353,3 +448,5 @@ Value_per_share = Equity_value / Shares_outstanding
 4. **Model tiering is mandatory** (Haiku for filtering, Sonnet for analysis)
 5. **All valuation tests must pass** before any PR merge
 6. **Test coverage >= 80%** for new code
+7. **Memory infrastructure from Day 1** (start storing analyses immediately for pattern accumulation)
+8. **Document competitive insights** (use process in `docs/competitive_analysis/PROCESS.md`)
