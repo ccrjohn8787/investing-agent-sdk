@@ -266,4 +266,120 @@ A: ~3 calls total (shared fixture optimization):
 
 ---
 
-**Last Updated**: 2025-10-01
+---
+
+## Validation Infrastructure (Added Oct 3, 2025)
+
+### 3-Layer Validation Pipeline
+
+**Purpose**: Catch 80% of issues in <1 second vs 20 minutes for full PM evaluation
+
+**Layers**:
+1. **Schema Validation** (<1ms) - Type checking, mathematical constraints
+2. **Structure Validation** (<1ms) - Required sections presence
+3. **Fast PM Evaluation** (~30sec) - Heuristic quality pre-check
+4. **Full PM Evaluation** (3-5min) - LLM-based comprehensive grading (ALWAYS REQUIRED)
+
+### Schema Validation (Layer 1)
+
+**Location**: `src/investing_agents/schemas/report.py`
+
+```python
+from investing_agents.schemas.report import validate_llm_output
+
+result = validate_llm_output(report_json)
+if not result.is_valid:
+    for error in result.errors:
+        print(f"✗ {error['path']}: {error['msg']}")
+```
+
+**What it catches**:
+- Wrong field types
+- Invalid value ranges (probabilities not 0-1, negative prices)
+- Math errors (scenario probabilities don't sum to 1.0)
+
+### Structure Validation (Layer 2)
+
+**Location**: `src/investing_agents/evaluation/structure_validator.py`
+
+```bash
+# CLI usage
+python -m tests.test_report_structure output/report.json
+```
+
+**What it validates**:
+- CRITICAL: Valuation scenarios (bull/base/bear)
+- HIGH: DCF methodology, fair value, entry/exit conditions
+- MEDIUM: Bull/bear analysis, recommendation
+
+**Grade impact**:
+- Missing scenarios → Grade capped at B (82-84)
+- Missing methodology → -3 to -5 points
+- Warnings → -1 point each
+
+### Fast PM Evaluation (Layer 3)
+
+**Location**: `src/investing_agents/evaluation/fast_evaluator.py`
+
+```bash
+# CLI usage
+python -m investing_agents.evaluation.fast_evaluator output/report.json
+```
+
+**What it checks**:
+1. Structure validation (reuses Layer 2)
+2. Scenario sanity (price ordering, probability sum, spreads)
+3. Text quality (length, depth, keyword presence)
+4. Valuation-recommendation consistency
+
+**CRITICAL**: This is a PRE-CHECK ONLY. Full PM evaluation is ALWAYS required.
+
+### Integration Tests
+
+**Location**: `tests/test_validation_integration.py`
+
+```bash
+# Run all 12 validation integration tests
+pytest tests/test_validation_integration.py -v
+
+# Expected: 12 passed in ~0.35s
+```
+
+**Test coverage**:
+- Complete pipeline validation (3 tests)
+- Scenario validation (3 tests)
+- Fast evaluation checks (3 tests)
+- Error detection hierarchy (2 tests)
+- Regression prevention (1 test)
+
+### Validation Demo
+
+**Location**: `examples/validation_demo.py`
+
+```bash
+python examples/validation_demo.py
+```
+
+**Demonstrates**:
+- Valid report passing all layers (A grade)
+- Missing scenarios caught in <1ms (Layer 2)
+- Invalid probabilities caught in <1ms (Layer 1)
+
+### Debugging Workflow with Validation
+
+```bash
+# 1. Run fast validation (1 second)
+python -m tests.test_report_structure output/report.json
+
+# 2. If structure passes, run fast PM check (30 seconds)
+python -m investing_agents.evaluation.fast_evaluator output/report.json
+
+# 3. ALWAYS run full PM evaluation (3-5 minutes)
+python -m investing_agents.evaluation.evaluator output/report.json
+```
+
+**Time saved**: Catch 80% of issues in <1sec vs 20min
+
+---
+
+**Last Updated**: 2025-10-03 (Validation infrastructure added)
